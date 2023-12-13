@@ -1,0 +1,647 @@
+---
+title: "One of Two? Visual dependency in dynamic scenes."
+author: "Candan A.Ş., Aydın T., Özkan Z.G."
+date: "2023-04-17"
+output:
+  html_document:
+    df_print: paged
+    toc: yes
+    toc_depth: '3'
+  html_notebook:
+    code_folding: hide
+    toc: yes
+    toc_depth: 3
+    toc_float:
+      collapsed: no
+      smooth_scroll: yes
+editor_options: 
+  markdown: 
+    wrap: 72
+---
+
+```{r setup, include=FALSE, message = F}
+knitr::opts_chunk$set(root.dir = dirname(rstudioapi::getSourceEditorContext()$path))
+library(tidyverse)
+library(ggpubr)
+library(ez)
+library(ggplot2)
+library(readxl)
+library(stringr)
+library(readr)
+library(rstatix)
+library(qqplotr)
+library(DescTools)
+```
+
+## Main raw data column explanation
+
+```{file description}
+Participant:            participant number
+Condition:              order type of the videos
+Perspective:            perspectives
+Activity:               action type made by actors in videos
+Actor:                  actor group
+Shot_Type:              type of shots
+movie_resp.keys:        button pressed by the participants to answer video memory part
+movie_resp.corr:        participants accuracy in video memory part
+movie_resp.rt:          participants reaction time in video memory part
+trials.thisIndex:       number of shot
+corrAnsw:               correct answers in video memory part
+corrAnsIM:              correct answers in image memory part
+IM_key.keys:            button pressed by the participants to answer image memory part
+IM_key.corr:            participants accuracy in image memory part
+IM_key.rt:              participants reaction time in image memory part
+```
+
+## Variable names explanation
+
+```{Variable names explanation}
+Note: Video memory and image memory, which were decided as analysis names at the beginning of the article, were later changed to shot memory and spatial orientation memory respectively.
+
+dprimes:               data frame for d prime scores, criterion c scores, z-scores, means, standard deviations, standart errors for video memory data
+VDdprime:              2*2 mixed design analysis of variance for d prime scores
+VDrt:                  2*2 mixed design analysis of variance for video memory reaction time
+partialE_cond_vd_d:    partial eta square for condition variable on video memory d prime scores
+partialE_Pers_vd_d:    partial eta square for perspective variable on video memory d prime scores
+partialE_inter_vd_d:   partial eta square for interaction on video memory d prime scores
+partialE_cond_vd_rt:   partial eta square for condition variable on video memory reaction times
+partialE_Pers_vd_rt:   partial eta square for perspective variable on video memory reaction times
+partialE_inter_vd_rt:  partial eta square for interaction on video memory reaction times
+Image_M:               data frame for means, standard deviations, standard errors for image memory data
+AccIM:                 2*2 mixed design analysis of variance for image memory accuracies
+partialE_cond_acc_IM:  partial eta square for condition variable on image memory accuracies
+partialE_Pers_acc_IM:  partial eta square for perseption variable on image memory accuracies
+partialE_inter_acc_IM: partial eta square for interaction on image memory accuracies
+IMrt:                  2*2 mixed design analysis of variance for image memory reaction times
+partialE_cond_rt_IM:   partial eta square for condition variable on image memory reaction times
+partialE_Pers_rt_IM:   partial eta square for perseption variable on image memory reaction times
+partialE_inter_rt_IM:  partial eta square for interaction on image memory reaction times
+Awareness:             data frame for awareness in post questionnaire
+```
+
+```{r load data, include=FALSE}
+#Please note, Since the z-score of the 16th participant's reaction time in two perspectives was higher than 3.92, it was excluded from the data as outlier.
+
+####    Video Memory    ####
+#source("prec.R")
+#raw_data = preproc(data_dir = "Results")
+#save(raw_data, file= "raw_data.Rda")
+#or
+load("raw_data.Rda")
+
+####    Image Memory    ####
+#source("precIM.R")
+#raw_dataIM = precIM(data_dir = "Results")
+#save(raw_dataIM, file= "raw_dataIM.Rda")
+# or
+load("raw_dataIM.Rda")
+
+####    Awareness    ####
+Awareness <- read_excel("Awareness.xlsx")
+```
+
+```{r setup2, include=FALSE, cache=FALSE}
+options(scipen = 1, digits = 3)
+```
+
+
+# 1. D prime and Accuracy Analysis
+
+## 1.1. Data preparetion
+
+```{r D prime and Accuracy Analysis}
+# n_hit/n_miss/n_fa/n_cr & d'primes
+
+dprimes <- raw_data %>% 
+  group_by(Participant,Perspective,Condition) %>% 
+  summarise(
+    n_hit = sum(movie_resp.corr == 1 & Shot_Type == "test shot"),
+    n_miss = sum(movie_resp.corr == 0 & Shot_Type == "test shot"),
+    n_fa = sum(movie_resp.corr == 0 & Shot_Type == "distractor shot"),
+    n_cr = sum(movie_resp.corr == 1 & Shot_Type == "distractor shot")) %>% 
+  group_by(Participant,Perspective) %>% 
+  mutate(hitrate = (n_hit+0.5)/((n_hit+0.5)+(n_miss+0.5)), farate = (n_fa+0.5)/((n_fa+0.5)+(n_cr+0.5))) %>% 
+  mutate(zscoreHit = qnorm(hitrate), zscoreFA = qnorm(farate)) %>% 
+  mutate(dprime = zscoreHit - zscoreFA) %>% 
+  mutate(CriterionC = -0.5*(zscoreHit+zscoreFA))
+
+dprimes1 <- raw_data %>% 
+  group_by(Participant,Perspective) %>% 
+  summarise(meanrt = mean(movie_resp.rt))
+
+dprimes <- dprimes %>% 
+  left_join(dprimes1,by=c("Participant","Perspective"))
+
+Image_M <- raw_dataIM %>% 
+  group_by(Participant,Perspective,Condition,Gender,Age) %>% 
+  summarise(accuracy_M = mean(IM_key.corr),
+            rt_M = mean(IM_key.rt),
+            rt_sd = sd(IM_key.rt))
+
+```
+
+## 1.2. Contrasting
+
+```{r Contrasting}
+dprimes$Condition <- as.factor(dprimes$Condition)
+levels(dprimes$Condition)
+contrasts(dprimes$Condition)
+
+dprimes$Perspective <- factor(dprimes$Perspective,levels= c("Single", "Shot-Reverse-Shot"))
+levels(dprimes$Perspective)
+contrasts(dprimes$Perspective)
+
+Image_M$Condition <- as.factor(Image_M$Condition)
+levels(Image_M$Condition)
+contrasts(Image_M$Condition)
+
+Image_M$Perspective <- factor(Image_M$Perspective, levels= c("Single", "Shot-Reverse-Shot"))
+levels(Image_M$Perspective)
+contrasts(Image_M$Perspective)
+```
+
+## 1.3. ANOVAs
+
+### 1.3.1. D prime
+
+```{r ANOVAs}
+VDdprime<-ezANOVA(data = dprimes,
+        dv = dprime,
+        wid=Participant,
+        within = Perspective,
+        between = Condition,
+        type = 3,
+        detailed = TRUE,
+        return_aov = TRUE);VDdprime
+```
+
+Partial Eta Squares
+
+```{r effect sizes1,include=FALSE}
+partialE_cond_vd_d <- VDdprime$ANOVA$SSn[2] / (VDdprime$ANOVA$SSd[2] + VDdprime$ANOVA$SSn[2])
+partialE_Pers_vd_d <- VDdprime$ANOVA$SSn[3] / (VDdprime$ANOVA$SSd[3] + VDdprime$ANOVA$SSn[3])
+partialE_inter_vd_d <- VDdprime$ANOVA$SSn[4] / (VDdprime$ANOVA$SSd[4] + VDdprime$ANOVA$SSn[4])
+```
+
+### 1.3.2. RT - video memory -
+
+```{r Anovas2}
+VDrt<-ezANOVA(data = dprimes,
+           dv = meanrt,
+           wid=Participant,
+           within = Perspective,
+           between = Condition,
+           type = 3,
+           detailed = TRUE,
+           return_aov = TRUE);VDrt
+```
+
+Partial Eta Squares
+
+```{r etas2,include=FALSE}
+partialE_cond_vd_rt <- VDrt$ANOVA$SSn[2] / (VDrt$ANOVA$SSd[2] + VDrt$ANOVA$SSn[2])
+partialE_Pers_vd_rt <- VDrt$ANOVA$SSn[3] / (VDrt$ANOVA$SSd[3] + VDrt$ANOVA$SSn[3])
+partialE_inter_vd_rt <- VDrt$ANOVA$SSn[4] / (VDrt$ANOVA$SSd[4] + VDrt$ANOVA$SSn[4])
+```
+
+### 1.3.3. Accuracy
+
+```{r Anovas3}
+AccIM<-ezANOVA(data=Image_M,
+        dv = accuracy_M,
+        wid=Participant,
+        within = Perspective,
+        between = Condition,
+        detailed = TRUE,
+        return_aov = TRUE,
+        type=3);AccIM
+```
+
+Partial Eta Squares
+
+```{r etas4,include=FALSE}
+partialE_cond_acc_IM <- AccIM$ANOVA$SSn[2] / (AccIM$ANOVA$SSd[2] + AccIM$ANOVA$SSn[2])
+partialE_Pers_acc_IM <- AccIM$ANOVA$SSn[3] / (AccIM$ANOVA$SSd[3] + AccIM$ANOVA$SSn[3])
+partialE_inter_acc_IM <- AccIM$ANOVA$SSn[4] / (AccIM$ANOVA$SSd[4] + AccIM$ANOVA$SSn[4])
+```
+
+### 1.3.4. RT - image memory -
+
+```{r Anovas4}
+IMrt<-ezANOVA(data=Image_M,
+        dv = rt_M,
+        wid=Participant,
+        within = Perspective,
+        between = Condition,
+        detailed = TRUE,
+        return_aov = TRUE,
+        type=3);IMrt
+```
+
+Partial Eta Squares
+
+```{r etas5,include=FALSE}
+partialE_cond_rt_IM <- IMrt$ANOVA$SSn[2] / (IMrt$ANOVA$SSd[2] + IMrt$ANOVA$SSn[2])
+partialE_Pers_rt_IM <- IMrt$ANOVA$SSn[3] / (IMrt$ANOVA$SSd[3] + IMrt$ANOVA$SSn[3])
+partialE_inter_rt_IM <- IMrt$ANOVA$SSn[4] / (IMrt$ANOVA$SSd[4] + IMrt$ANOVA$SSn[4])
+```
+
+## 1.3.5 Partial Eta Squares
+
+```{r etas6, include=FALSE}
+# Eta Squares Table
+sqr<- c(partialE_cond_vd_d,partialE_Pers_vd_d,partialE_inter_vd_d,partialE_cond_vd_rt,partialE_Pers_vd_rt,partialE_inter_vd_rt,
+                partialE_cond_acc_IM,partialE_Pers_acc_IM,partialE_inter_acc_IM,partialE_cond_rt_IM,partialE_Pers_rt_IM,partialE_inter_rt_IM)
+nm <- c("VideoMemory_Dprime_Order","VideoMemory_Dprime_Pers","VideoMemory_Dprime_Inter","VideoMemory_RT_Order","VideoMemory_RT_Pers","VideoMemory_RT_Inter",
+                "ImageMemory_Accuracy_Order","ImageMemory_Accuracy_Pers","ImageMemory_Accuracy_Inter","ImageMemory_RT_Order","ImageMemory_RT_Pers","ImageMemory_RT_Inter")
+SqrTable <- data.frame(row.names = c("name","eta_sq"))
+SqrTable <- data.frame(name = nm,eta_sq = sqr)
+```
+
+```{r Eta sqr tables}
+tibble(SqrTable)
+```
+
+# 2. Awareness
+
+```{r Post-experiment Questions}
+Awareness <- Awareness %>% group_by(AwarenessType,Question) %>% mutate(means = (sum(First,na.rm = TRUE)/62)*100)
+```
+
+# 3. Visualizations
+
+## 3.1. Awareness Plot
+
+```{r Post-experiment Questions2, echo=FALSE}
+bargraph_awareness = ggplot(Awareness %>% group_by(AwarenessType,Question), aes(y=means, x=AwarenessType, fill = as.factor(Question)))+
+  geom_bar(position=position_dodge(1), stat="identity",width = 0.9)+
+  scale_fill_manual(name="Question", values = c("#999999", "#666666","#333333"),
+                    labels = c("first", "second","third")) + 
+  xlab("Awareness Type") +
+  ylab("% of Participants") + 
+  theme(text=element_text(size=12,
+                          family="Arial"),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        axis.title = element_text(size = 10),
+        panel.background = element_rect(colour = "black", size=1.3, fill=NA),
+        #legend.position = c(0.8,0.8),
+        legend.position = "top",
+        aspect.ratio = 1) + 
+  coord_cartesian(ylim = range(0:100)) +
+  scale_y_continuous(expand = c(0,0.4))+
+  geom_text(aes(label=round(means,2)), position=position_dodge(width=1), vjust=2,col = "white");bargraph_awareness
+
+```
+
+## 3.2. D'scores
+
+```{r D scores Viz,echo=FALSE}
+dprimes <- dprimes %>% group_by(Perspective,Condition) %>% mutate(meand = mean(dprime),
+                                                                   sd = sd(dprime),
+                                                                   n = n())
+                                                                
+dprimes$se = dprimes$sd/sqrt(dprimes$n)
+
+Image_M <- Image_M %>% group_by(Perspective,Condition) %>% mutate( accuracy_M_M = mean(accuracy_M),
+                                                         sdAcc = sd(accuracy_M),
+                                                         n = n(),
+                                                         rt_M_M = mean(rt_M),
+                                                         sdRT_sd = sd(rt_M))
+Image_M$se = Image_M$sdAcc/sqrt(Image_M$n)
+
+bargraph_dprime = ggplot(dprimes %>% group_by(Perspective,Condition), aes(y=dprime, x=Perspective, fill = Condition, ymax= meand + se, ymin= meand - se))+
+  stat_summary(fun.y = mean, 
+               geom = "bar", 
+               position=position_dodge(0.7),
+               width = 0.6) + 
+  geom_errorbar(position = position_dodge(0.7), 
+                width = 0.2)+
+  scale_fill_manual(name="Order", values = c("#666666", "#999999"),
+                    labels = c("Canonical", "Scrambled")) + 
+  xlab("Perspective") +
+  ylab("D prime scores") + 
+  theme(text=element_text(size=12,
+                          family="Arial"),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        axis.title = element_text(size = 10),
+        panel.background = element_rect(colour = "black", size=1.3, fill=NA),
+        legend.position = "top",
+        #legend.position = c(0.7,0.86),
+        legend.box = "vertical",
+        aspect.ratio = 1) +
+  coord_cartesian(ylim = range(0:2.5)) +
+  scale_y_continuous(expand = c(0,0.005))
+
+bargraph_dprime<-bargraph_dprime +
+  geom_line(data = tibble(x=c(1,2), y = c(1.75,1.75)), aes(x=x,y=y), 
+           inherit.aes = F)+
+  geom_text(data = tibble(x=1.5, y = 1.8), aes(x=x,y=y), 
+            inherit.aes = F,label = "* * *",size = 5)+
+  geom_line(data = tibble(x=c(1,1), y = c(1.75,1.65)), aes(x=x,y=y), 
+            inherit.aes = F)+
+  geom_line(data = tibble(x=c(2,2), y = c(1.75,1.65)), aes(x=x,y=y), 
+            inherit.aes = F);bargraph_dprime
+```
+
+## 3.3. Image Memory
+
+```{r Image M Viz, echo=FALSE}
+bargraph_image_m = ggplot(Image_M %>% group_by(Perspective,Condition), aes(y=accuracy_M, x=Perspective, fill = Condition,ymax= accuracy_M_M + se, ymin= accuracy_M_M - se))+
+  coord_cartesian(ylim = c(0.5,1))+
+  stat_summary(fun = mean,
+               geom = "bar",
+               position=position_dodge(0.7),
+               width = 0.6) +
+  geom_errorbar(position = position_dodge(0.7),
+                width = 0.2)+
+  scale_fill_manual(name="Order", values = c("#666666", "#999999"),
+                    labels = c("Canonical", "Scrambled")) + 
+  xlab("Perspective") +
+  ylab("% of Accuracy") + 
+  theme(text=element_text(size=12,
+                          family="Arial"),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        axis.title = element_text(size = 10),
+        panel.background = element_rect(colour = "black", size=1.3, fill=NA),
+        #legend.position = c(0.7,0.86),
+        legend.position = "top",
+        legend.box = "vertical",
+        aspect.ratio = 1)+
+  scale_y_continuous(expand = c(0,0.004),)
+
+bargraph_image_m <- bargraph_image_m + 
+  geom_line(data = tibble(x=c(1,2), y = c(0.97,0.97)), aes(x=x,y=y), 
+            inherit.aes = F)+
+  geom_text(data = tibble(x=1.5, y = 0.974), aes(x=x,y=y), 
+            inherit.aes = F,label = "* * *",size = 5)+
+  geom_line(data = tibble(x=c(1,1), y = c(0.97,0.955)), aes(x=x,y=y), 
+            inherit.aes = F)+
+  geom_line(data = tibble(x=c(2,2), y = c(0.97,0.955)), aes(x=x,y=y), 
+            inherit.aes = F);bargraph_image_m
+```
+
+# 4. Gender, Age and Activity
+
+## 4.1. Data preparetion
+```{r DP for gender Age}
+dprimes_gender <- raw_data %>% group_by(Participant,Gender,Age) %>% summarise(
+  n_hit = sum(movie_resp.corr == 1 & Shot_Type == "test shot"),
+  n_miss = sum(movie_resp.corr == 0 & Shot_Type == "test shot"),
+  n_fa = sum(movie_resp.corr == 0 & Shot_Type == "distractor shot"),
+  n_cr = sum(movie_resp.corr == 1 & Shot_Type == "distractor shot")) %>% 
+  group_by(Participant) %>% 
+  mutate(hitrate = (n_hit+0.5)/((n_hit+0.5)+(n_miss+0.5)), farate = (n_fa+0.5)/((n_fa+0.5)+(n_cr+0.5))) %>% 
+  mutate(zscoreHit = qnorm(hitrate), zscoreFA = qnorm(farate)) %>% 
+  mutate(dprime = zscoreHit - zscoreFA) %>% 
+  mutate(CriterionC = -0.5*(zscoreHit+zscoreFA))
+
+dprimes_gender1 <- raw_data %>% group_by(Participant) %>% summarise(meanrt = mean(movie_resp.rt))
+dprimes_gender <- dprimes_gender %>% left_join(dprimes_gender1,by=c("Participant"))
+
+dprimes_act <- raw_data %>% group_by(Participant,Perspective,Condition,Activity) %>% summarise(
+  n_hit = sum(movie_resp.corr == 1 & Shot_Type == "test shot"),
+  n_miss = sum(movie_resp.corr == 0 & Shot_Type == "test shot"),
+  n_fa = sum(movie_resp.corr == 0 & Shot_Type == "distractor shot"),
+  n_cr = sum(movie_resp.corr == 1 & Shot_Type == "distractor shot")
+) %>% 
+  group_by(Participant,Activity) %>% 
+  mutate(hitrate = (n_hit+0.5)/((n_hit+0.5)+(n_miss+0.5)), farate = (n_fa+0.5)/((n_fa+0.5)+(n_cr+0.5))) %>% 
+  mutate(zscoreHit = qnorm(hitrate), zscoreFA = qnorm(farate)) %>% 
+  mutate(dprime = zscoreHit - zscoreFA) %>% 
+  mutate(CriterionC = -0.5*(zscoreHit+zscoreFA))
+
+dprimes1 <- raw_data %>% group_by(Participant,Perspective,Condition,Activity) %>% summarise(meanrt = mean(movie_resp.rt))
+dprimes_act <- dprimes_act %>% left_join(dprimes1,by=c("Participant","Perspective","Condition","Activity"))
+
+
+Image_Mact <- raw_dataIM %>% group_by(Participant,Perspective,Condition,Gender,Age,Activity) %>% summarise(accuracy_M = mean(IM_key.corr),
+                                                                                                                 rt_M = mean(IM_key.rt),
+                                                                                                                 rt_sd = sd(IM_key.rt))
+
+Image_Mact$Activity <- as.factor(Image_Mact$Activity)
+Image_Mact$Participant <- as.factor(Image_Mact$Participant)
+levels(Image_Mact$Activity)
+contrasts(Image_Mact$Activity)
+```
+
+## 4.2. Assumption check
+
+```{r Assumptions, include=FALSE}
+dprimes_gender$Gender <- ifelse(dprimes_gender$Gender == "Kadın","Female","Male")
+
+dprimes_gender$Gender <- as.factor(dprimes_gender$Gender)
+levels(dprimes_gender$Gender)
+contrasts(dprimes_gender$Gender)
+
+##### Mean RT #####
+
+# Outlier 
+dprimes_gender %>%
+  group_by(Gender) %>%
+  identify_outliers(meanrt)
+
+# Shapiro wilk test
+dprimes_gender %>% group_by(Participant) %>%
+  group_by(Gender) %>%
+  summarise(`W Stat` = shapiro.test(meanrt)$statistic,
+            p.value = shapiro.test(meanrt)$p.value)
+
+# QQ plot 
+qq1 <- ggplot(data = dprimes_gender %>% group_by(Participant), mapping = aes(sample = meanrt, color = Gender, fill = Gender)) +
+  stat_qq_band(alpha=0.5, conf=0.95, qtype=1, bandType = "boot") +
+  stat_qq_line(identity=TRUE) +
+  stat_qq_point(col="black") +
+  facet_wrap(~ Gender, scales = "free") +
+  labs(x = "Theoretical Quantiles", y = "Sample Quantiles") + theme_bw()
+
+# Equal variances
+resRT <- var.test(meanrt ~ Gender, data = dprimes_gender)
+resRT
+
+##### d primes #####
+
+# Outlier 
+dprimes_gender %>%
+  group_by(Gender) %>%
+  identify_outliers(dprime)
+
+# Shapiro wilk test
+dprimes_gender %>% group_by(Participant) %>%
+  group_by(Gender) %>%
+  summarise(`W Stat` = shapiro.test(dprime)$statistic,
+            p.value = shapiro.test(dprime)$p.value)
+
+# QQ plot 
+qq2 <- ggplot(data = dprimes_gender %>% group_by(Participant), mapping = aes(sample = dprime, color = Gender, fill = Gender)) +
+  stat_qq_band(alpha=0.5, conf=0.95, qtype=1, bandType = "boot") +
+  stat_qq_line(identity=TRUE) +
+  stat_qq_point(col="black") +
+  facet_wrap(~ Gender, scales = "free") +
+  labs(x = "Theoretical Quantiles", y = "Sample Quantiles") + theme_bw()
+
+# Equal variances
+res_d <- var.test(dprime ~ Gender, data = dprimes_gender)
+res_d
+
+##### Image memory accuracy #####
+
+Image_M_gender <- raw_dataIM %>% group_by(Participant,Gender,Age) %>% summarise(accuracy_M = mean(IM_key.corr),
+                                                                                               rt_M = mean(IM_key.rt),
+                                                                                               rt_sd = sd(IM_key.rt))
+
+Image_M_gender$Gender <- ifelse(Image_M_gender$Gender == "Kadın","Female","Male")
+Image_M_gender$Gender <- as.factor(Image_M_gender$Gender)
+levels(Image_M_gender$Gender)
+contrasts(Image_M_gender$Gender)
+
+# Outlier 
+Image_M_gender %>%
+  group_by(Gender) %>%
+  identify_outliers(accuracy_M)
+
+# Shapiro wilk test
+Image_M_gender %>% group_by(Participant) %>%
+  group_by(Gender) %>%
+  summarise(`W Stat` = shapiro.test(accuracy_M)$statistic,
+            p.value = shapiro.test(accuracy_M)$p.value)
+
+# QQ plot 
+qq3 <- ggplot(data = Image_M_gender %>% group_by(Participant), mapping = aes(sample = accuracy_M, color = Gender, fill = Gender)) +
+  stat_qq_band(alpha=0.5, conf=0.95, qtype=1, bandType = "boot") +
+  stat_qq_line(identity=TRUE) +
+  stat_qq_point(col="black") +
+  facet_wrap(~ Gender, scales = "free") +
+  labs(x = "Theoretical Quantiles", y = "Sample Quantiles") + theme_bw()
+
+# Equal variances
+res_Acc <- var.test(accuracy_M ~ Gender, data = Image_M_gender)
+res_Acc
+
+##### Image memory RT #####
+
+# Outlier 
+Image_M_gender %>%
+  group_by(Gender) %>%
+  identify_outliers(rt_M)
+
+# Shapiro wilk test
+Image_M_gender %>% group_by(Participant) %>%
+  group_by(Gender) %>%
+  summarise(`W Stat` = shapiro.test(rt_M)$statistic,
+            p.value = shapiro.test(rt_M)$p.value)
+
+# QQ plot 
+qq4 <- ggplot(data = Image_M_gender %>% group_by(Participant), mapping = aes(sample = rt_M, color = Gender, fill = Gender)) +
+  stat_qq_band(alpha=0.5, conf=0.95, qtype=1, bandType = "boot") +
+  stat_qq_line(identity=TRUE) +
+  stat_qq_point(col="black") +
+  facet_wrap(~ Gender, scales = "free") +
+  labs(x = "Theoretical Quantiles", y = "Sample Quantiles") + theme_bw()
+
+# Equal variances
+res_rtİm <- var.test(rt_M ~ Gender, data = Image_M_gender)
+res_rtİm
+
+
+all_qqs <- ggarrange(qq1, qq2, qq3, qq4 + rremove("x.text"), 
+                         labels = c("A)", "B)","C)","D)"),
+                         ncol = 2, nrow = 2, legend= "none");all_qqs
+```
+
+## 4.3. Anaylsis
+
+### 4.3.1 Mann-Whitney U tests
+
+```{r Mann-whitney u}
+H1<-wilcox.test(meanrt ~ Gender, data=dprimes_gender, na.rm=TRUE, paired=FALSE, exact=FALSE, conf.int=TRUE)
+print(H1)
+
+H2<-wilcox.test(dprime ~ Gender, data=dprimes_gender, na.rm=TRUE, paired=FALSE, exact=FALSE, conf.int=TRUE)
+print(H2)
+
+H3<-wilcox.test(accuracy_M ~ Gender, data=Image_M_gender, na.rm=TRUE, paired=FALSE, exact=FALSE, conf.int=TRUE)
+print(H3)
+
+H4<-wilcox.test(rt_M ~ Gender, data=Image_M_gender, na.rm=TRUE, paired=FALSE, exact=FALSE, conf.int=TRUE)
+print(H4)
+```
+
+### 4.3.2 Age correlations
+
+```{r Corr Age}
+## Video memory ##
+
+# d primes
+
+cor.test(dprimes_gender$dprime, dprimes_gender$Age)
+
+# meanrt
+
+cor.test(dprimes_gender$meanrt, dprimes_gender$Age)
+
+## Image memory ##
+
+# accuracy
+
+cor.test(Image_M_gender$accuracy_M, Image_M_gender$Age)
+
+# rt
+
+cor.test(Image_M_gender$rt_M, Image_M_gender$Age)
+
+```
+
+## 4.4. One way ANOVAs for Activity
+
+### 4.4.1. Image memory
+```{r Activity IM}
+# Accuracy
+
+model<-ezANOVA(data=Image_Mact,
+              dv = accuracy_M,
+              wid=Participant,
+              within = Activity,
+              detailed = TRUE,
+              return_aov = TRUE,
+              type=3);model
+# RT
+
+model<-ezANOVA(data=Image_Mact,
+               dv = rt_M,
+               wid=Participant,
+               within = Activity,
+               detailed = TRUE,
+               return_aov = TRUE,
+               type=3);model
+```
+
+### 4.4.2. Video memory
+
+```{r Activity VD}
+#dprime
+
+dprimes_act$Activity <- as.factor(dprimes_act$Activity)
+levels(dprimes_act$Activity)
+contrasts(dprimes_act$Activity)
+
+model<-ezANOVA(data=dprimes_act,
+               dv = dprime,
+               wid=Participant,
+               within = Activity,
+               detailed = TRUE,
+               return_aov = TRUE,
+               type=3);model
+
+# RT
+model<-ezANOVA(data=dprimes_act,
+               dv = meanrt,
+               wid=Participant,
+               within = Activity,
+               detailed = TRUE,
+               return_aov = TRUE,
+               type=3);model
+```
+
